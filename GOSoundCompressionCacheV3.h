@@ -120,6 +120,13 @@ public:
    * class are exactly the point (GetHistory's snapshot, the batch decoder's
    * padding scratch, mid-run captures). Copy everything EXCEPT the sequence:
    * a copy is a private snapshot - its own seq starts consistent at 0. */
+  // Deliberately `= default`: no hidden per-object cost for the common
+  // case of placing this in a pool/array and Init()ing it explicitly.
+  // Leaves m_ptr/m_position etc. UNINITIALISED (not zeroed) - call
+  // Init() before first use. Confirmed by testing: skipping it is
+  // undefined behaviour that can look harmless (a single fresh stack
+  // slot's garbage often happens to read as null) and then crash or
+  // silently corrupt state a few instances later (e.g. in an array).
   GOSoundCompressionCacheV3() = default;
   GOSoundCompressionCacheV3(const GOSoundCompressionCacheV3 &o) { *this = o; }
   GOSoundCompressionCacheV3 &operator=(const GOSoundCompressionCacheV3 &o) {
