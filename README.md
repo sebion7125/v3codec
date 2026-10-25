@@ -61,6 +61,7 @@ std::vector<unsigned char> buf(
   GOSoundCompressionCacheV3::WorstCaseSize(frameCount, channels));
 
 GOSoundCompressionCacheV3 enc;
+enc.Init(); // required: the default constructor leaves state uninitialised
 unsigned written = enc.Encode(
   buf.data(), frameCount, channels, /*order=*/3,
   /*snapshotPositions=*/nullptr, /*numSnapshots=*/0,
@@ -68,15 +69,69 @@ unsigned written = enc.Encode(
   /*outSnapshots=*/nullptr);
 
 GOSoundCompressionCacheV3 dec;
+dec.Init();
 dec.DecompressTo(/*position=*/frameCount - 1, buf.data(), channels, /*order=*/3);
 // dec.m_value[c] now holds each channel's decoded sample at that position
 ```
 
-For the resumable-snapshot and 8-lane AVX2 batched-decode APIs (the
-mechanisms that make concurrent multi-stream decode and seeking/loop
-re-entry practical — see the technical disclosure's parts 3 and 4),
-see the extensive doc comments directly in `GOSoundCompressionCacheV3.h`
-(`Snapshot`/`LoadSnapshot`) and `GOSoundCompressionCacheV3Batch.h`
+Batched decode of several independent streams at once, the part that
+actually carries the codec's speed-up (see the technical disclosure's
+"Measured results"): up to `LANES` (8) independently-positioned
+streams decode together in one AVX2 pass instead of one at a time.
+
+```cpp
+#include "GOSoundCompressionCacheV3.h"
+#include "GOSoundCompressionCacheV3Batch.h"
+
+using Lane = GOSoundCompressionCacheV3Batch::Lane;
+constexpr unsigned LANES = GOSoundCompressionCacheV3Batch::LANES; // 8
+
+if (!GOSoundCompressionCacheV3Batch::CpuSupported()) {
+  // No AVX2 at runtime: decode each stream individually via
+  // GOSoundCompressionCacheV3::DecompressTo instead, as above.
+}
+
+// LANES independently encoded streams (e.g. LANES organ pipes sounding
+// at once), each already Encode()'d into its own buffer exactly as in
+// the single-stream example above.
+GOSoundCompressionCacheV3 cache[LANES];
+Lane lanes[LANES];
+for (unsigned i = 0; i < LANES; i++) {
+  cache[i].Init(); // required: see the single-stream example above
+  // Position each stream at its own current playback position before
+  // batching — here, the start; a real caller resumes from wherever
+  // that voice last left off via a Snapshot (see LoadSnapshot) rather
+  // than always starting at 0.
+  cache[i].DecompressTo(
+    /*position=*/0, encodedBuf[i].data(), channels, /*order=*/3);
+  lanes[i] = {&cache[i], channels};
+}
+
+// One interleaved output buffer per channel: out[c][sample * LANES + lane].
+const unsigned nSamples = 128; // e.g. one render period
+std::vector<int32_t> outStorage[V3CODEC_MAX_CHANNELS];
+int32_t *out[V3CODEC_MAX_CHANNELS];
+for (unsigned c = 0; c < channels; c++) {
+  outStorage[c].resize(nSamples * LANES);
+  out[c] = outStorage[c].data();
+}
+
+GOSoundCompressionCacheV3Batch::DecodeBatchInterleaved(
+  lanes, LANES, nSamples, out);
+// out[c][s * LANES + lane] now holds channel c's sample s for each of
+// the LANES streams, all decoded together in this one call.
+```
+
+All lanes passed to one call must share the same channel count —
+grouping differently-channelled streams is the caller's responsibility,
+not this kernel's (see the `Lane` struct's own comment). For the
+resumable-snapshot mechanism that lets a real caller resume each lane
+from wherever it actually left off instead of always decoding from
+frame 0 (the mechanism that makes concurrent multi-stream decode and
+seeking/loop re-entry practical — see the technical disclosure's parts
+3 and 4), see the extensive doc comments directly in
+`GOSoundCompressionCacheV3.h` (`Snapshot`/`LoadSnapshot`) and the
+remaining `GOSoundCompressionCacheV3Batch.h` entry points
 (`DecodeBatch`, `DecodeBatchInterleaved`,
 `DecodeBatchInterleavedMidCapture`, `DecodeBatchPlanarMidCapture`).
 
