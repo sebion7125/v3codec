@@ -7,11 +7,13 @@ concurrently (e.g. a polyphonic software sampler rendering many
 simultaneous voices from sample-based audio).
 
 See
-[`docs/disclosures/v3-codec-technical-disclosure.md`](../../docs/disclosures/v3-codec-technical-disclosure.md)
-(in the host repository this library was extracted from) for the full,
-host-independent technical disclosure — format, predictor family, the
-batched decode kernel including why the planar layout matters, and the
-measured results.
+[`docs/disclosures/v3-codec-technical-disclosure.md`](docs/disclosures/v3-codec-technical-disclosure.md)
+for the full, host-independent technical disclosure — format,
+predictor family, the batched decode kernel including why the planar
+layout matters, and the measured results. (Also submitted to Technical
+Disclosure Commons; mirrored here so it ships with the code it
+describes rather than only with the host application it was extracted
+from.)
 
 **Status:** extracted from, and still developed alongside, its host
 application ([GrandOrgue](https://github.com/GrandOrgue/grandorgue)),
