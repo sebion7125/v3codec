@@ -650,15 +650,27 @@ public:
  * statistics accidentally grew GOSoundAudioSection and had to be undone.
  *
  * Conditioned on V3CODEC_MAX_CHANNELS so a channel-count change reports as
- * a deliberate layout change rather than as a spurious failure. */
+ * a deliberate layout change rather than as a spurious failure.
+ *
+ * Also conditioned on sizeof(void*) == 8: the 64/40 byte figures were
+ * measured and validated only on 64-bit x86-64 (the performance-ceiling
+ * platform this codec was built for). Two raw pointer members
+ * (m_blockData, m_ptr) make the struct 8 bytes smaller per pointer on a
+ * 32-bit target (e.g. 32-bit ARM, found 2026-10-25 via a CI cross-build)
+ * - a real, expected size difference from pointer width, not an
+ * accidental regression this gate exists to catch. That configuration
+ * was never measured against a ceiling target, so no equivalent fixed
+ * number is asserted for it here. */
 static_assert(
-  V3CODEC_MAX_CHANNELS != 2 || sizeof(GOSoundCompressionCacheV3) == 64,
-  "GOSoundCompressionCacheV3 must stay 64 bytes - it is embedded per "
-  "stream and per sampler slot; see the size-gate comment above");
+  V3CODEC_MAX_CHANNELS != 2 || sizeof(void *) != 8
+    || sizeof(GOSoundCompressionCacheV3) == 64,
+  "GOSoundCompressionCacheV3 must stay 64 bytes on 64-bit platforms - "
+  "it is embedded per stream and per sampler slot; see the size-gate "
+  "comment above");
 static_assert(
-  V3CODEC_MAX_CHANNELS != 2
+  V3CODEC_MAX_CHANNELS != 2 || sizeof(void *) != 8
     || sizeof(GOSoundCompressionCacheV3::Snapshot) == 40,
-  "Snapshot must stay 40 bytes - growing it to 44 cost ~7% per voice-frame "
-  "in v10; see the size-gate comment above");
+  "Snapshot must stay 40 bytes on 64-bit platforms - growing it to 44 "
+  "cost ~7% per voice-frame in v10; see the size-gate comment above");
 
 #endif
